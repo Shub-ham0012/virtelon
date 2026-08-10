@@ -19,10 +19,12 @@ export default async function OrganizationSettingsPage() {
   return (
     <div className="max-w-lg space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Organization</h1>
-        <p className="text-sm text-(--sub)">Slug: {organization.slug} · Plan: {organization.plan}</p>
+        <h1 className="font-serif-display text-2xl font-medium">Organization</h1>
+        <p className="mt-1 text-[12.5px] text-(--sub)">
+          Slug: {organization.slug} · Plan: {organization.plan}
+        </p>
       </div>
-      <div className="card p-6">
+      <div className="card reveal p-5">
         <OrganizationForm name={organization.name} timezone={organization.timezone} readOnly={!canEdit} />
       </div>
     </div>

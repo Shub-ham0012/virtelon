@@ -4,16 +4,9 @@ import { tenantDb } from "@/lib/tenant-db";
 import { hasPermission } from "@virtelon/core/rbac";
 import { getLeadDiscoveryProvider } from "@virtelon/core/lead-discovery";
 import { ScoreBadge } from "@/components/ui/score-badge";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Pill } from "@/components/ui/pill";
 import { DiscoverForm } from "./discover-form";
-
-const STATUS_STYLES: Record<string, string> = {
-  NEW: "text-(--sub)",
-  QUALIFIED: "text-(--accent)",
-  WON: "text-green-600 dark:text-green-400",
-  LOST: "text-(--danger)",
-  DO_NOT_CONTACT: "text-(--danger)",
-  OPTED_OUT: "text-(--danger)",
-};
 
 export default async function LeadsPage() {
   const user = await requireSession();
@@ -29,13 +22,15 @@ export default async function LeadsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Leads</h1>
-          <p className="text-sm text-(--sub)">{leads.length} lead(s)</p>
+          <h1 className="font-serif-display text-2xl font-medium">Leads</h1>
+          <p className="mt-1 text-[12.5px] text-(--sub)">
+            {leads.length} lead{leads.length === 1 ? "" : "s"} · discovery via {provider.name}
+          </p>
         </div>
         {canManage ? (
-          <Link href="/leads/import" className="text-sm text-(--accent)">
+          <Link href="/leads/import" className="text-[12.5px] font-semibold text-(--accent)">
             Import from CSV →
           </Link>
         ) : null}
@@ -44,14 +39,13 @@ export default async function LeadsPage() {
       {canManage ? <DiscoverForm providerName={provider.name} /> : null}
 
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-[12.5px]">
           <thead>
-            <tr className="border-b border-(--border) text-left text-xs uppercase tracking-wide text-(--sub)">
+            <tr className="border-b border-(--border) text-left text-[10px] font-bold tracking-wide text-(--sub) uppercase">
               <th className="px-4 py-3">Business</th>
               <th className="px-4 py-3">Score</th>
               <th className="px-4 py-3">Category</th>
               <th className="px-4 py-3">City</th>
-              <th className="px-4 py-3">Rating</th>
               <th className="px-4 py-3">Website</th>
               <th className="px-4 py-3">Social</th>
               <th className="px-4 py-3">Status</th>
@@ -59,35 +53,38 @@ export default async function LeadsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-(--border)">
-            {leads.map((lead) => (
-              <tr key={lead.id} className="hover:bg-(--bg)">
-                <td className="px-4 py-3">
-                  <Link href={`/leads/${lead.id}`} className="font-medium text-(--accent)">
-                    {lead.businessName}
-                  </Link>
-                </td>
-                <td className="px-4 py-3">
-                  <ScoreBadge score={lead.leadScore} />
-                </td>
-                <td className="px-4 py-3 text-(--sub)">{lead.category}</td>
-                <td className="px-4 py-3 text-(--sub)">{lead.city ?? "—"}</td>
-                <td className="px-4 py-3 tabular-nums">{lead.rating ?? "—"}</td>
-                <td className="px-4 py-3">{lead.website ? "Yes" : "Missing"}</td>
-                <td className="px-4 py-3 text-(--sub)">
-                  {(() => {
-                    const count = Object.keys((lead.socialProfiles as object | null) ?? {}).length;
-                    return count > 0 ? `${count} found` : lead.lastEnrichedAt ? "None found" : "—";
-                  })()}
-                </td>
-                <td className={`px-4 py-3 ${STATUS_STYLES[lead.status] ?? ""}`}>{lead.status}</td>
-                <td className="px-4 py-3 text-(--sub)">
-                  {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(lead.discoveredAt)}
-                </td>
-              </tr>
-            ))}
+            {leads.map((lead) => {
+              const socialCount = Object.keys((lead.socialProfiles as object | null) ?? {}).length;
+              return (
+                <tr key={lead.id} className="transition-colors hover:bg-(--surface-2)">
+                  <td className="px-4 py-3">
+                    <Link href={`/leads/${lead.id}`} className="font-semibold text-(--accent)">
+                      {lead.businessName}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <ScoreBadge score={lead.leadScore} />
+                  </td>
+                  <td className="px-4 py-3 text-(--sub)">{lead.category}</td>
+                  <td className="px-4 py-3 text-(--sub)">{lead.city ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    {lead.website ? <Pill tone="success">Yes</Pill> : <Pill tone="sub">Missing</Pill>}
+                  </td>
+                  <td className="px-4 py-3 text-(--sub)">
+                    {socialCount > 0 ? `${socialCount} found` : lead.lastEnrichedAt ? "None found" : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill status={lead.status} />
+                  </td>
+                  <td className="px-4 py-3 font-mono-data text-(--sub)">
+                    {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(lead.discoveredAt)}
+                  </td>
+                </tr>
+              );
+            })}
             {leads.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-(--sub)">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-(--sub)">
                   No leads yet — run a discovery search above{canManage ? " or import a CSV" : ""} to get started.
                 </td>
               </tr>

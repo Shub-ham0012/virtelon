@@ -14,8 +14,8 @@ export function DiscoverForm({ providerName }: { providerName: string }) {
   const isMock = providerName === "mock";
 
   return (
-    <div className="card p-6">
-      <h2 className="mb-1 text-sm font-semibold">Discover leads</h2>
+    <div className="card reveal p-5">
+      <h2 className="mb-1 text-[13px] font-bold">Discover leads</h2>
       <p className="mb-4 text-xs text-(--sub)">
         {isOpenStreetMap
           ? "Using free OpenStreetMap data — real businesses, no cost, no signup. Coverage is less complete than Google: no ratings/review counts, and phone numbers are missing on many listings. Add a Google Places API key in Settings later for more complete results."
