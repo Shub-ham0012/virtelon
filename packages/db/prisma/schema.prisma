@@ -1,0 +1,827 @@
+// packages/db/prisma/schema.prisma
+// Design source of truth: docs/ARCHITECTURE.md §C — keep both in sync.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Platform / Tenancy ─────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  branding  Json? // logo url, colors, sender name — tenant config, never hard-coded
+  services  Json? // legacy free-text labels; superseded by ServiceOffering below
+  timezone  String   @default("UTC")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships       Membership[]
+  leads             Lead[]
+  campaigns         Campaign[]
+  leadSources       LeadSource[]
+  leadImportBatches LeadImportBatch[]
+  serviceOfferings  ServiceOffering[]
+  outreachAccounts  OutreachAccount[]
+  messageTemplates  MessageTemplate[]
+  conversations     Conversation[]
+  inboundMessages   InboundMessage[]
+  webhookEvents     WebhookEvent[]
+  integrations      Integration[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  subscription      Subscription?
+  usageRecords      UsageRecord[]
+  scoringConfig     ScoringConfig?
+  outreachLimits    OutreachLimit?
+  followUpRules     FollowUpRule[]
+  blocklistEntries  BlocklistEntry[]
+
+  @@index([slug])
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  AGENCY
+  ENTERPRISE
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String?
+  passwordHash    String? // null if OAuth-only
+  isPlatformAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  memberships   Membership[]
+  assignedLeads Lead[]         @relation("AssignedLeads")
+  activities    Activity[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+}
+
+model Membership {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  role           Role      @default(SALES)
+  invitedAt      DateTime  @default(now())
+  joinedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  SALES
+  VIEWER
+}
+
+// ─── Lead Sources, Discovery & Imports ───────────────────────
+// LeadSource.type stays a free string ("google_places" | "csv_import" |
+// "manual_entry" | "api_import" | …) deliberately, not a Prisma enum — a
+// new discovery or import source must never require a schema migration.
+
+model LeadSource {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String
+  config         Json // provider-specific config, secrets referenced not embedded
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads         Lead[]
+  importBatches LeadImportBatch[]
+
+  @@index([organizationId])
+}
+
+/// One row per CSV/manual/API import run. Gives the UI something concrete to
+/// show ("18 of 20 rows imported, 2 duplicates skipped") and gives support a
+/// paper trail without touching the Lead table's hot path.
+model LeadImportBatch {
+  id              String            @id @default(cuid())
+  organizationId  String
+  sourceId        String
+  fileName        String?
+  status          ImportBatchStatus @default(PENDING)
+  totalRows       Int               @default(0)
+  importedCount   Int               @default(0)
+  duplicateCount  Int               @default(0)
+  errorCount      Int               @default(0)
+  errors          Json? // [{ row: 14, message: "missing phone or email" }]
+  createdByUserId String?
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  source       LeadSource   @relation(fields: [sourceId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
+
+enum ImportBatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Lead {
+  id             String @id @default(cuid())
+  organizationId String
+
+  businessName   String
+  category       String
+  subcategory    String?
+  phone          String?
+  phoneE164      String? // normalized via packages/core/lib/phone — dedup + WhatsApp matching key
+  email          String?
+  website        String?
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  latitude       Float?
+  longitude      Float?
+  rating         Float?
+  reviewCount    Int?
+  socialProfiles Json? // { instagram, facebook, linkedin, ... }
+  businessStatus String? // OPERATIONAL | CLOSED_TEMPORARILY | CLOSED_PERMANENTLY | UNKNOWN
+
+  sourceId   String // LeadSource.id
+  externalId String? // provider's stable id (e.g. Google Place ID) — dedup key
+  dedupHash  String // computed fallback hash (name+phone+geo) — dedup key
+
+  status        LeadStatus    @default(NEW)
+  websiteStatus WebsiteStatus @default(UNKNOWN)
+  leadScore     Int?
+  doNotContact  Boolean       @default(false)
+  notes         String?
+
+  discoveredAt    DateTime  @default(now())
+  lastEnrichedAt  DateTime?
+  lastContactedAt DateTime?
+  assignedUserId  String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  source       LeadSource   @relation(fields: [sourceId], references: [id])
+  assignedUser User?        @relation("AssignedLeads", fields: [assignedUserId], references: [id])
+
+  contacts         Contact[]
+  websiteAudit     WebsiteAudit?
+  scores           LeadScore[]
+  aiAnalyses       AIAnalysis[]
+  campaignLeads    CampaignLead[]
+  outreachMessages OutreachMessage[]
+  inboundMessages  InboundMessage[]
+  conversations    Conversation[]
+  followUps        FollowUp[]
+  activities       Activity[]
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, status])
+  @@index([organizationId, dedupHash])
+  @@index([organizationId, phoneE164])
+  @@index([organizationId, category, city])
+  @@index([organizationId, leadScore])
+  @@index([organizationId, discoveredAt])
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  CONTACTED
+  REPLIED
+  INTERESTED
+  NOT_INTERESTED
+  MEETING
+  PROPOSAL
+  WON
+  LOST
+  OPTED_OUT
+  DO_NOT_CONTACT
+}
+
+enum WebsiteStatus {
+  UNKNOWN
+  MISSING
+  PRESENT
+  UNREACHABLE
+}
+
+/// A Lead (business) can have several people; each Contact can be reachable
+/// through several methods (mobile, landline, email). ContactMethod is where
+/// normalized, verifiable, per-method data lives; Contact.email/phone stay as
+/// denormalized "primary method" copies so the common case skips a join.
+model Contact {
+  id        String   @id @default(cuid())
+  leadId    String
+  name      String?
+  role      String?
+  email     String?
+  phone     String?
+  phoneE164 String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  lead             Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  methods          ContactMethod[]
+  outreachMessages OutreachMessage[]
+  inboundMessages  InboundMessage[]
+  conversations    Conversation[]
+  activities       Activity[]
+
+  @@index([leadId])
+}
+
+model ContactMethod {
+  id              String            @id @default(cuid())
+  contactId       String
+  type            ContactMethodType
+  value           String // raw, as entered/discovered
+  normalizedValue String // E.164 for phone/whatsapp, lowercased for email
+  isPrimary       Boolean           @default(false)
+  isVerified      Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, type, normalizedValue])
+  @@index([contactId])
+}
+
+enum ContactMethodType {
+  PHONE
+  EMAIL
+  WHATSAPP
+  LINKEDIN
+  INSTAGRAM
+  FACEBOOK
+  OTHER
+}
+
+// ─── Website Audit & Scoring ─────────────────────────────────
+
+model WebsiteAudit {
+  id               String   @id @default(cuid())
+  leadId           String   @unique
+  url              String
+  reachable        Boolean
+  hasHttps         Boolean?
+  score            Int? // 0-100
+  performanceHints Json?
+  seoFindings      Json?
+  strengths        String[]
+  problems         String[]
+  opportunities    String[]
+  screenshotUrl    String? // S3-compatible storage
+  rawResult        Json? // full provider payload for debugging
+  auditedAt        DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model LeadScore {
+  id            String   @id @default(cuid())
+  leadId        String
+  score         Int
+  breakdown     Json // { websiteOpportunity: 20, businessQuality: 15, ... }
+  configVersion Int // which ScoringConfig version produced this
+  computedAt    DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model ScoringConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  weights        Json // configurable weight per signal
+  threshold      Int      @default(70)
+  version        Int      @default(1)
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model AIAnalysis {
+  id                   String   @id @default(cuid())
+  leadId               String
+  provider             String // "claude"
+  model                String
+  score                Int?
+  priority             String? // low | medium | high
+  reasoning            String[]
+  painPoints           String[]
+  opportunities        String[]
+  recommendedServiceId String? // structured pick from ServiceOffering, when it matches the catalog
+  recommendedService   String? // free-text fallback for a pitch outside the configured catalog
+  recommendedPitch     String?
+  rawResponse          Json
+  validated            Boolean  @default(false)
+  // The outreach message generated alongside this analysis. Lives here
+  // rather than on OutreachMessage because OutreachMessage.campaignId is
+  // required and Campaigns don't exist until Phase 5 — this lets Phase 4
+  // show a real generated draft without a half-built OutreachMessage row.
+  draftMessage         String?
+  draftTone            String?
+  draftLanguage        String?
+  createdAt            DateTime @default(now())
+
+  lead                Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recommendedOffering ServiceOffering? @relation(fields: [recommendedServiceId], references: [id])
+
+  @@index([leadId])
+}
+
+// ─── Services / Offerings (what the tenant sells) ────────────
+// Structured so AIProvider.generateOutreach() can reason about which
+// service to pitch and why, instead of matching against a free-text blob.
+
+model ServiceOffering {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  name                 String
+  description          String
+  targetIndustries     String[]
+  targetBusinessTypes  String[]
+  painPoints           String[]
+  idealCustomerProfile String?
+  priceRange           String? // free text ("₹15,000–₹50,000" or "custom quote")
+  pitchAngles          String[]
+  caseStudies          Json? // [{ title, summary, url }]
+  portfolioUrls        String[]
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+  aiAnalyses   AIAnalysis[]
+
+  @@index([organizationId, isActive])
+}
+
+// ─── Campaigns ────────────────────────────────────────────────
+
+model Campaign {
+  id              String       @id @default(cuid())
+  organizationId  String
+  name            String
+  category        String
+  location        String
+  serviceId       String? // structured link once the tenant has offerings configured
+  serviceLabel    String // free-text fallback, always present for display/back-compat
+  dailyLeadTarget Int          @default(20)
+  minLeadScore    Int          @default(70)
+  messageTone     String       @default("professional")
+  language        String       @default("en")
+  mode            CampaignMode @default(APPROVAL_REQUIRED)
+  followUpRuleId  String?
+  isActive        Boolean      @default(true)
+  scheduleCron    String? // e.g. "0 9 * * *"
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service          ServiceOffering?  @relation(fields: [serviceId], references: [id])
+  followUpRule     FollowUpRule?     @relation(fields: [followUpRuleId], references: [id])
+  campaignLeads    CampaignLead[]
+  outreachMessages OutreachMessage[]
+  followUps        FollowUp[]
+
+  @@index([organizationId, isActive])
+}
+
+enum CampaignMode {
+  MANUAL
+  APPROVAL_REQUIRED
+  AUTOMATED
+}
+
+model CampaignLead {
+  id         String   @id @default(cuid())
+  campaignId String
+  leadId     String
+  addedAt    DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId])
+  @@index([campaignId])
+}
+
+// ─── Outreach Accounts & Templates ───────────────────────────
+// OutreachAccount is the connected sending identity (a WhatsApp Business
+// phone number, a verified email domain). Channel-specific fields are kept
+// first-class rather than buried in metadata JSON because they're queried
+// and monitored directly (e.g. "every account with a RED quality rating").
+
+model OutreachAccount {
+  id                   String                 @id @default(cuid())
+  organizationId       String
+  channel              String // "whatsapp" | "email" | "sms" — open string, new channels need no migration
+  provider             String // "whatsapp_cloud_api" | "resend" | "ses"
+  label                String // user-facing name, e.g. "Virtelon Sales WhatsApp"
+  status               OutreachAccountStatus  @default(PENDING_VERIFICATION)
+  senderIdentity       String? // E.164 phone for whatsapp/sms, verified from-address for email
+  wabaId               String? // WhatsApp Business Account id
+  phoneNumberId        String? // WhatsApp Cloud API phone number id
+  qualityRating        WhatsAppQualityRating?
+  encryptedCredentials String? // envelope-encrypted, never plaintext
+  lastError            String?
+  lastSyncedAt         DateTime?
+  metadata             Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templates        MessageTemplate[]
+  conversations    Conversation[]
+  outreachMessages OutreachMessage[]
+
+  @@index([organizationId, channel])
+}
+
+enum OutreachAccountStatus {
+  PENDING_VERIFICATION
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum WhatsAppQualityRating {
+  GREEN
+  YELLOW
+  RED
+  UNKNOWN
+}
+
+model MessageTemplate {
+  id                 String                 @id @default(cuid())
+  organizationId     String
+  outreachAccountId  String? // required for whatsapp templates (tied to a WABA); null for freeform email
+  name               String
+  channel            String // email | whatsapp
+  category           String? // whatsapp: MARKETING | UTILITY | AUTHENTICATION
+  tone               String?
+  language           String?
+  bodyTemplate       String? // static structure/fallback text
+  components         Json? // whatsapp: header/body/footer/button structured payload
+  providerTemplateId String? // id assigned by the channel provider once submitted
+  approvalStatus     TemplateApprovalStatus @default(NOT_SUBMITTED)
+  rejectionReason    String?
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  isActive           Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  outreachAccount OutreachAccount?  @relation(fields: [outreachAccountId], references: [id])
+  messages        OutreachMessage[]
+
+  @@index([organizationId, channel])
+}
+
+enum TemplateApprovalStatus {
+  NOT_SUBMITTED // email templates never leave this state — only whatsapp needs approval
+  PENDING
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+}
+
+// ─── Conversations & Messages ────────────────────────────────
+// A Conversation threads a Lead/Contact + channel together so inbound and
+// outbound messages render as one timeline in /inbox, and so WhatsApp's
+// 24-hour customer-service-window rule has somewhere to be tracked.
+
+model Conversation {
+  id                    String             @id @default(cuid())
+  organizationId        String
+  leadId                String
+  contactId             String?
+  outreachAccountId     String
+  channel               String
+  status                ConversationStatus @default(OPEN)
+  windowExpiresAt       DateTime? // whatsapp 24h session window
+  lastMessageAt         DateTime?
+  lastMessageDirection  MessageDirection?
+  createdAt             DateTime           @default(now())
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead             Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact          Contact?          @relation(fields: [contactId], references: [id])
+  outreachAccount  OutreachAccount   @relation(fields: [outreachAccountId], references: [id])
+  outreachMessages OutreachMessage[]
+  inboundMessages  InboundMessage[]
+
+  @@index([organizationId, status])
+  @@index([leadId])
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model OutreachMessage {
+  id                String         @id @default(cuid())
+  leadId            String
+  contactId         String?
+  campaignId        String
+  conversationId    String?
+  templateId        String?
+  channel           String
+  content           String
+  generatedBy       String // "ai" | "manual"
+  status            OutreachStatus @default(DRAFT)
+  scheduledFor      DateTime?
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  sentAt            DateTime?
+  providerMessageId String? // correlates with inbound webhook delivery/read/failed events
+  outreachAccountId String?
+  createdAt         DateTime       @default(now())
+
+  lead            Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact         Contact?         @relation(fields: [contactId], references: [id])
+  campaign        Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  conversation    Conversation?    @relation(fields: [conversationId], references: [id])
+  template        MessageTemplate? @relation(fields: [templateId], references: [id])
+  outreachAccount OutreachAccount? @relation(fields: [outreachAccountId], references: [id])
+  events          OutreachEvent[]
+
+  @@index([leadId])
+  @@index([contactId])
+  @@index([campaignId, status])
+  @@index([status, scheduledFor])
+}
+
+enum OutreachStatus {
+  DRAFT
+  PENDING_APPROVAL
+  QUEUED
+  SCHEDULED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+  REPLIED
+  INTERESTED
+  NOT_INTERESTED
+  OPTED_OUT
+  FOLLOW_UP_SCHEDULED
+  CONVERTED
+}
+
+model OutreachEvent {
+  id                   String   @id @default(cuid())
+  messageId            String
+  type                 String // queued|sent|delivered|read|failed|replied|opted_out|template_status_changed
+  providerErrorCode    String?
+  providerErrorMessage String?
+  metadata             Json?
+  occurredAt           DateTime @default(now())
+
+  message OutreachMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+/// Raw inbound message from a lead/contact, across any channel. Kept
+/// separate from OutreachMessage (outbound-only: approval workflow,
+/// campaign attribution, AI generation) rather than unified into one
+/// direction-flagged model, since inbound has none of those concerns.
+model InboundMessage {
+  id                String    @id @default(cuid())
+  organizationId    String
+  leadId            String
+  contactId         String?
+  conversationId    String
+  outreachAccountId String // denormalized copy of conversation.outreachAccountId, for fast filtering
+  channel           String
+  providerMessageId String
+  fromIdentity      String // phone or email the message came from
+  content           String?
+  messageType       String    @default("text") // text | image | document | button_reply | ...
+  rawPayload        Json
+  aiSummary         String? // optional AI intent/summary — never fabricated, omitted if not confident
+  receivedAt        DateTime  @default(now())
+  processedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([outreachAccountId, providerMessageId])
+  @@index([organizationId, receivedAt])
+  @@index([conversationId])
+}
+
+/// Every inbound webhook call lands here first — raw, signature-checked,
+/// idempotency-keyed on the provider's own event id — before anything
+/// derived from it (OutreachEvent, InboundMessage, template status) is
+/// written. This is what makes webhook processing replay-safe on retry.
+model WebhookEvent {
+  id              String    @id @default(cuid())
+  organizationId  String? // nullable: some payloads arrive before the account can be resolved
+  provider        String // "whatsapp_cloud_api" | "resend" | ...
+  externalEventId String // provider's event/message id — the idempotency key
+  eventType       String
+  payload         Json
+  signatureValid  Boolean
+  processedAt     DateTime?
+  processingError String?
+  receivedAt      DateTime  @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalEventId])
+  @@index([organizationId, receivedAt])
+}
+
+model OutreachLimit {
+  id               String @id @default(cuid())
+  organizationId   String @unique
+  dailyLimit       Int    @default(20)
+  perCampaignLimit Int?
+  cooldownMinutes  Int    @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model BlocklistEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  contactKey     String // email or phone, normalized — the authoritative suppression key
+  channel        String   @default("all") // "all" | "whatsapp" | "email" — not nullable: Postgres treats NULL as distinct in unique constraints
+  reason         String? // opted_out | manual_block
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, contactKey, channel])
+  @@index([organizationId])
+}
+
+// ─── Follow-ups ────────────────────────────────────────────────
+
+model FollowUpRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  steps          Json // [{ dayOffset: 3, tone: "friendly" }, { dayOffset: 7, tone: "final" }]
+  stopOnReply    Boolean  @default(true)
+  stopOnOptOut   Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+}
+
+model FollowUp {
+  id           String   @id @default(cuid())
+  leadId       String
+  campaignId   String
+  stepIndex    Int
+  scheduledFor DateTime
+  status       String   @default("scheduled") // scheduled|sent|cancelled
+  createdAt    DateTime @default(now())
+
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([status, scheduledFor])
+}
+
+// ─── CRM / Activity ───────────────────────────────────────────
+
+model Activity {
+  id        String   @id @default(cuid())
+  leadId    String
+  contactId String? // set when the activity concerns a specific person, not just the business
+  userId    String?
+  type      String // note|status_change|assignment|call|meeting
+  content   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  lead    Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id])
+  user    User?    @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+}
+
+// ─── Integrations / Billing-ready / Usage ────────────────────
+
+model Integration {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  type                 String // "google_places" | "anthropic" | "resend" | "stripe"
+  status               String   @default("disconnected") // connected|disconnected|error
+  encryptedCredentials String? // envelope-encrypted, never plaintext
+  metadata             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type])
+}
+
+model Subscription {
+  id               String    @id @default(cuid())
+  organizationId   String    @unique
+  plan             Plan      @default(FREE)
+  status           String    @default("active") // active|past_due|canceled
+  externalRef      String? // future Stripe subscription id
+  currentPeriodEnd DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+/// One row per (org, metric, day) — a counter, upserted-and-incremented by
+/// packages/core/billing/metering.ts, not an append-only event log. Daily
+/// granularity matches the daily-limit enforcement need; monthly/plan-period
+/// totals are a SUM over rows, computed on read.
+model UsageRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  metric         String // see packages/core/billing/metering.ts for the closed set of meterable metrics
+  quantity       Int      @default(0)
+  periodStart    DateTime // truncated to the start of the day
+  periodEnd      DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metric, periodStart])
+  @@index([organizationId, metric, periodStart])
+}
+
+// ─── Audit & Notifications ────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String // "campaign.created" | "message.approved" | ...
+  entityType     String
+  entityId       String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
+}
+
+model Notification {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String?
+  type           String
+  title          String
+  body           String?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, userId, readAt])
+}

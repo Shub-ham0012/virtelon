@@ -1,0 +1,11 @@
+export type { DiscoveredLead, LeadDiscoveryProvider, LeadSearchCriteria } from "./LeadDiscoveryProvider";
+export type { ImportInput, ImportRowError, LeadImportAdapter } from "./LeadImportAdapter";
+export { normalizeDiscoveredLead, type NormalizedLead } from "./normalize";
+export { computeDedupHash } from "./dedup";
+export { ingestDiscoveredLeads, type IngestContext, type IngestResult } from "./ingest";
+export { getOrCreateLeadSource } from "./get-or-create-source";
+export { getLeadDiscoveryProvider } from "./provider-factory";
+export { MockLeadDiscoveryProvider } from "./providers/mock.provider";
+export { GooglePlacesProvider } from "./providers/google-places.provider";
+export { OpenStreetMapProvider } from "./providers/openstreetmap.provider";
+export { CsvImportAdapter } from "./adapters/csv.adapter";

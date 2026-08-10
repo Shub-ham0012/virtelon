@@ -1,0 +1,40 @@
+{
+  "name": "@virtelon/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rbac": "./src/rbac/index.ts",
+    "./lead-discovery": "./src/lead-discovery/index.ts",
+    "./website-audit": "./src/website-audit/index.ts",
+    "./presence-research": "./src/presence-research/index.ts",
+    "./lead-scoring": "./src/lead-scoring/index.ts",
+    "./ai": "./src/ai/index.ts",
+    "./offerings": "./src/offerings/index.ts",
+    "./campaigns": "./src/campaigns/index.ts",
+    "./crm": "./src/crm/index.ts",
+    "./outreach": "./src/outreach/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "@virtelon/config": "workspace:^",
+    "@virtelon/db": "workspace:*",
+    "@virtelon/types": "workspace:*",
+    "cheerio": "^1.2.0",
+    "csv-parse": "^7.0.2",
+    "libphonenumber-js": "^1.13.10",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
