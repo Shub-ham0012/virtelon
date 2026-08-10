@@ -8,11 +8,13 @@ export default async function DashboardPage() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [totalLeads, todaysLeads, highPriorityLeads, withWebsite] = await Promise.all([
+  const [totalLeads, todaysLeads, highPriorityLeads, withWebsite, pendingOutreach, sentOutreach] = await Promise.all([
     db.lead.count({}),
     db.lead.count({ where: { discoveredAt: { gte: todayStart } } }),
     db.lead.count({ where: { leadScore: { gte: 75 } } }),
     db.lead.count({ where: { website: { not: null } } }),
+    db.outreachMessage.count({ where: { status: { in: ["PENDING_APPROVAL", "QUEUED"] } } }),
+    db.outreachMessage.count({ where: { status: "SENT", sentAt: { gte: todayStart } } }),
   ]);
 
   const metrics = [
@@ -20,6 +22,8 @@ export default async function DashboardPage() {
     { label: "Discovered today", value: todaysLeads },
     { label: "High priority (75+)", value: highPriorityLeads },
     { label: "Have a website", value: totalLeads > 0 ? `${withWebsite}/${totalLeads}` : "—" },
+    { label: "Outreach awaiting you", value: pendingOutreach },
+    { label: "Sent today", value: sentOutreach },
   ];
 
   return (
@@ -27,12 +31,12 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-xl font-semibold">Welcome, {user.name ?? user.email}</h1>
         <p className="text-sm text-(--sub)">
-          Every lead you discover or import is automatically checked (website + online presence) and scored —
-          AI-written outreach messages land in the next phase.
+          Every lead you discover or import is automatically checked (website + online presence) and scored, and
+          AI can draft a WhatsApp message for it — approve it on the Outreach page, then send it yourself.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         {metrics.map((metric) => (
           <div key={metric.label} className="card p-4">
             <div className="text-xs text-(--sub)">{metric.label}</div>
