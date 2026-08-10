@@ -14,7 +14,7 @@ export default function LoginPage() {
 
   return (
     <form action={formAction} className="space-y-4">
-      <h1 className="text-base font-semibold">Sign in</h1>
+      <h1 className="font-serif-display text-xl font-medium">Sign in</h1>
 
       <div>
         <Label htmlFor="email">Email</Label>

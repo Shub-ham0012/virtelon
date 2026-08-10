@@ -21,7 +21,7 @@ export function AcceptInviteForm({
 
   return (
     <form action={formAction} className="space-y-4">
-      <h1 className="text-base font-semibold">Join {organizationName}</h1>
+      <h1 className="font-serif-display text-xl font-medium">Join {organizationName}</h1>
       <p className="text-sm text-(--sub)">You've been invited as {role.toLowerCase()}.</p>
 
       <input type="hidden" name="token" value={token} />

@@ -14,7 +14,7 @@ export default function RegisterPage() {
 
   return (
     <form action={formAction} className="space-y-4">
-      <h1 className="text-base font-semibold">Create your organization</h1>
+      <h1 className="font-serif-display text-xl font-medium">Create your organization</h1>
 
       <div>
         <Label htmlFor="organizationName">Organization name</Label>

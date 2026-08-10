@@ -21,8 +21,8 @@ export function CampaignDiscoverForm({
   const isOpenStreetMap = providerName === "openstreetmap";
 
   return (
-    <div className="card p-6">
-      <h2 className="mb-1 text-sm font-semibold">Run discovery for this campaign</h2>
+    <div className="card reveal p-5">
+      <h2 className="mb-1 text-[13px] font-bold">Run discovery for this campaign</h2>
       <p className="mb-4 text-xs text-(--sub)">
         Searches using the campaign's own category and location, and attaches every result to this campaign.
         {isOpenStreetMap ? " Using free OpenStreetMap data — no cost, no signup." : ""}
