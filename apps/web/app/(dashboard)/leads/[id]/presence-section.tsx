@@ -14,10 +14,12 @@ export function PresenceSection({
   website,
   websiteAudit,
   socialProfiles,
+  socialSearchConfigured,
 }: {
   website: string | null;
   websiteAudit: WebsiteAudit | null;
   socialProfiles: SocialProfilesJson;
+  socialSearchConfigured: boolean;
 }) {
   const platforms = Object.entries(socialProfiles) as [string, SocialProfilesJson[keyof SocialProfilesJson]][];
 
@@ -73,7 +75,16 @@ export function PresenceSection({
       <div className="card p-6">
         <div className="mb-3 text-xs uppercase tracking-wide text-(--sub)">Social profiles</div>
         {platforms.length === 0 ? (
-          <p className="text-sm text-(--sub)">None found yet.</p>
+          <div className="text-sm text-(--sub)">
+            <p>{website ? "None found on their website, and no search key is configured to look further." : "None found yet."}</p>
+            {!socialSearchConfigured ? (
+              <p className="mt-1 text-xs">
+                Real profile search needs a free Google Custom Search API key (see <code>GOOGLE_SEARCH_API_KEY</code> in
+                your environment settings) — without it, this only reads links the business has already published on
+                its own website. It will never guess a profile URL.
+              </p>
+            ) : null}
+          </div>
         ) : (
           <div className="space-y-2">
             {platforms.map(([platform, profile]) => (

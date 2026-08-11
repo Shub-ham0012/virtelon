@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { MockSocialPresenceProvider } from "./mock.provider";
 
 describe("MockSocialPresenceProvider", () => {
-  it("never calls the network and returns deterministic, clearly-labeled results", async () => {
+  it("never calls the network and never fabricates a result", async () => {
     const provider = new MockSocialPresenceProvider();
     const results = await provider.search({ businessName: "Acme Coaching", location: "Patna", platforms: ["instagram", "facebook", "linkedin"] });
 
-    expect(results.every((r) => r.source === "mock")).toBe(true);
-    expect(results.every((r) => r.confidence === "low")).toBe(true);
+    // No real search happened (no API key configured), so returning a
+    // guessed URL would be a fabricated fact, not a search result — the
+    // honest behavior is no results, not a plausible-looking fake one.
+    expect(results).toEqual([]);
   });
 
   it("is deterministic for the same input", async () => {

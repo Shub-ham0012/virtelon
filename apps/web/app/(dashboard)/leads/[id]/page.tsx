@@ -5,6 +5,7 @@ import { canAccessLead, canModifyLead, hasPermission } from "@virtelon/core/rbac
 import type { SocialProfilesJson } from "@virtelon/core/presence-research";
 import type { ScoreBreakdown } from "@virtelon/core/lead-scoring";
 import { getAIProvider } from "@virtelon/core/ai";
+import { getSocialPresenceProvider } from "@virtelon/core/presence-research";
 import { listActivity, listContacts } from "@virtelon/core/crm";
 import { listOutreachForLead } from "@virtelon/core/outreach";
 import { ScoreBadge } from "@/components/ui/score-badge";
@@ -87,6 +88,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const canManage = hasPermission(user.role, "lead:manage");
   const canModify = canModifyLead(user.role, user.userId, lead);
   const aiProvider = getAIProvider();
+  const socialProvider = getSocialPresenceProvider();
   const members = canManage
     ? (await db.membership.findMany({ include: { user: true } })).map((m) => ({
         userId: m.userId,
@@ -195,7 +197,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </SectionCard>
       ) : null}
 
-      <PresenceSection website={lead.website} websiteAudit={websiteAudit} socialProfiles={socialProfiles} />
+      <PresenceSection
+        website={lead.website}
+        websiteAudit={websiteAudit}
+        socialProfiles={socialProfiles}
+        socialSearchConfigured={socialProvider.name !== "mock"}
+      />
 
       {canManage ? (
         <SectionCard title="Generate AI analysis & outreach" delay="0.26s">

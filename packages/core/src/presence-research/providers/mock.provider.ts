@@ -1,24 +1,18 @@
 import type { SocialPresenceProvider, SocialPresenceQuery, SocialPresenceResult } from "../SocialPresenceProvider";
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20);
-}
-
-/** Deterministic, clearly-labeled fake search results — no network call, no
- * API key. Half the requested platforms "find" a low-confidence result so
- * the UI/downstream logic can be exercised without a real search key. */
+/**
+ * No GOOGLE_SEARCH_API_KEY configured — rather than fabricate a plausible-
+ * looking URL (e.g. guessing "instagram.com/<slugified-name>"), this returns
+ * no results. A guessed URL presented as an "unconfirmed" search result is
+ * still a fabricated fact, not a real search — see docs/ARCHITECTURE.md §31
+ * ("never a fake result presented as real"). Real links from the business's
+ * own website (extractSocialLinks, always free) are unaffected by this —
+ * this mock only stands in for the paid/keyed search step.
+ */
 export class MockSocialPresenceProvider implements SocialPresenceProvider {
   readonly name = "mock";
 
-  async search(query: SocialPresenceQuery): Promise<SocialPresenceResult[]> {
-    const handle = slugify(query.businessName);
-    return query.platforms
-      .filter((_, i) => i % 2 === 0)
-      .map((platform) => ({
-        platform,
-        url: `https://${platform === "x" ? "x.com" : `${platform}.com`}/${handle}`,
-        confidence: "low" as const,
-        source: this.name,
-      }));
+  async search(_query: SocialPresenceQuery): Promise<SocialPresenceResult[]> {
+    return [];
   }
 }
