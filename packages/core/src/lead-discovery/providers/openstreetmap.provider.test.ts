@@ -81,6 +81,17 @@ describe("OpenStreetMapProvider", () => {
     expect(overpassBody).toContain(`"name"~"coaching institute"`);
   });
 
+  it("escapes double-quotes in the category so it can't break out of the Overpass QL string", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)).mockResolvedValueOnce(jsonResponse({ elements: [] }));
+
+    const injected = 'x"]; [out:csv(::id)]; way(1); out; //';
+    await provider.search({ category: injected, location: "Patna", limit: 20 });
+
+    const overpassBody = fetchMock.mock.calls[1]![1].body as string;
+    expect(overpassBody).not.toContain('x"];'); // the raw unescaped breakout sequence must not appear
+    expect(overpassBody).toContain('x\\"'); // the quote is escaped instead
+  });
+
   it("returns an empty list when the location can't be geocoded", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]));
 

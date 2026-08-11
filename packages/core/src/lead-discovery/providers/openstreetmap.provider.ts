@@ -117,8 +117,12 @@ function tagToFilter(tag: string): string {
   return `"${key}"="${value}"`;
 }
 
+// Escapes both regex metacharacters (this value is used as an Overpass QL
+// regex literal) and the double-quote that delimits the surrounding string —
+// without the quote, a category like `x"]; [out:csv(::id)]; way(1); out;`
+// would close the string early and let arbitrary Overpass QL be appended.
 function escapeOverpassRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
 }
 
 /**

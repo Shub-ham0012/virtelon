@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import dns from "node:dns/promises";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpWebsiteAuditProvider } from "./http-audit.provider";
 
 /** Spins up a real local HTTP server so the audit provider's fetch + HTML
@@ -44,6 +45,21 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
 describe("HttpWebsiteAuditProvider", () => {
+  // These tests exercise HTML-parsing/scoring, not the SSRF safety check —
+  // the safety check would otherwise (correctly) block our own 127.0.0.1
+  // test server, so it's stubbed to report a public address for these cases.
+  // The real fetch below still hits the real local server; only the DNS
+  // lookup the safety check uses is faked.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dnsLookupSpy: any;
+
+  beforeEach(() => {
+    dnsLookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([{ address: "203.0.113.10", family: 4 }] as never);
+  });
+  afterEach(() => {
+    dnsLookupSpy.mockRestore();
+  });
+
   it("scores a well-formed page highly and extracts its social link", async () => {
     const provider = new HttpWebsiteAuditProvider();
     const result = await provider.audit(`${baseUrl}/good`);
@@ -80,10 +96,49 @@ describe("HttpWebsiteAuditProvider", () => {
 
   it("marks a connection failure as unreachable rather than throwing", async () => {
     const provider = new HttpWebsiteAuditProvider();
-    const result = await provider.audit("http://127.0.0.1:1"); // nothing listens here
+    const result = await provider.audit(`${baseUrl.replace(/:\d+$/, ":1")}`); // nothing listens here
 
     expect(result.reachable).toBe(false);
     expect(result.score).toBeNull();
     expect(result.problems[0]).toMatch(/did not respond/i);
+  });
+});
+
+describe("HttpWebsiteAuditProvider — SSRF protection", () => {
+  // No dns.lookup stub here — these exercise the real safety check, which
+  // must block anything that resolves to a private/internal/loopback
+  // address (lead.website is free-text set via CSV import, fully
+  // attacker-controlled by anyone with lead:manage).
+  it("refuses to fetch a loopback address", async () => {
+    const provider = new HttpWebsiteAuditProvider();
+    const result = await provider.audit(`${baseUrl}/good`); // baseUrl is 127.0.0.1
+
+    expect(result.reachable).toBe(false);
+    expect(result.score).toBeNull();
+    expect(result.problems[0]).toMatch(/private\/internal/i);
+  });
+
+  it("refuses to fetch the cloud metadata / link-local address", async () => {
+    const provider = new HttpWebsiteAuditProvider();
+    const result = await provider.audit("http://169.254.169.254/latest/meta-data/");
+
+    expect(result.reachable).toBe(false);
+    expect(result.score).toBeNull();
+  });
+
+  it("refuses a non-http(s) protocol", async () => {
+    const provider = new HttpWebsiteAuditProvider();
+    const result = await provider.audit("file:///etc/passwd");
+
+    expect(result.reachable).toBe(false);
+    expect(result.score).toBeNull();
+  });
+
+  it("refuses a malformed URL rather than throwing", async () => {
+    const provider = new HttpWebsiteAuditProvider();
+    const result = await provider.audit("not a url");
+
+    expect(result.reachable).toBe(false);
+    expect(result.score).toBeNull();
   });
 });
