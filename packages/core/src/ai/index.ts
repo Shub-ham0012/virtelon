@@ -9,6 +9,7 @@ export {
 } from "./AIProvider";
 export { getAIProvider } from "./provider-factory";
 export { ClaudeAIProvider } from "./providers/claude.provider";
+export { GeminiAIProvider } from "./providers/gemini.provider";
 export { MockAIProvider } from "./providers/mock.provider";
 export { analyzeAndDraftForLead, type DraftGenerationOptions, type DraftGenerationResult } from "./analyze-and-draft";
 export {

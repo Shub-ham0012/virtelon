@@ -32,6 +32,10 @@ const envSchema = z.object({
 
   // Phase 4 — AI
   ANTHROPIC_API_KEY: z.string().optional(),
+  // Free-tier fallback AI provider when ANTHROPIC_API_KEY isn't set (no
+  // billing account required to get a key from Google AI Studio) — see
+  // packages/core/src/ai/providers/gemini.provider.ts.
+  GEMINI_API_KEY: z.string().optional(),
 
   // Phase 2 — lead discovery
   GOOGLE_PLACES_API_KEY: z.string().optional(),
