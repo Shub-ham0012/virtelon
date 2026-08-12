@@ -52,6 +52,15 @@ export class GoogleCustomSearchProvider implements SocialPresenceProvider {
       query.platforms.map((platform) => this.searchPlatform(query.businessName, query.location, platform))
     );
 
+    // A per-platform failure (bad key, API not enabled, quota) must not take
+    // down the whole search — but it also must not vanish silently, or a
+    // real misconfiguration looks identical to "genuinely found nothing."
+    for (const result of platformResults) {
+      if (result.status === "rejected") {
+        console.error("[presence-research] Google Custom Search request failed:", result.reason);
+      }
+    }
+
     return platformResults
       .filter((r): r is PromiseFulfilledResult<SocialPresenceResult | null> => r.status === "fulfilled")
       .map((r) => r.value)
