@@ -13,7 +13,7 @@ const OVERPASS_URLS = [
   "https://overpass.openstreetmap.ru/api/interpreter",
 ];
 const USER_AGENT = "VirtelonPlatform-LeadDiscovery/1.0 (+https://virtelon.com)";
-const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_TIMEOUT_MS = 8_000;
 const SEARCH_RADIUS_METERS = 8_000;
 
 // Best-effort category -> OSM tag mapping. OSM's tagging vocabulary doesn't
@@ -84,28 +84,29 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Tries each Overpass mirror in turn; within a mirror, retries once on a
- * 5xx response or network/timeout error before moving to the next mirror.
- * Only throws once every mirror has been exhausted.
+ * Tries each Overpass mirror once, in turn, on a 5xx response or network/
+ * timeout error, before moving to the next mirror — no same-mirror retry.
+ * A slow/overloaded mirror is more likely to still be slow a second later
+ * than to have recovered, so falling over to a *different* mirror gets a
+ * working response faster than retrying the same one (worst case ~3x
+ * FETCH_TIMEOUT_MS instead of ~6x). Only throws once every mirror has
+ * failed.
  */
 async function fetchFromOverpass(query: string): Promise<Response> {
   let lastError: unknown;
 
   for (const url of OVERPASS_URLS) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await fetchWithTimeout(url, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
-          body: query,
-        });
-        if (response.ok) return response;
-        if (response.status < 500) return response; // client-side error — retrying won't help
-        lastError = new Error(`OpenStreetMap search failed: ${response.status} ${response.statusText}`);
-      } catch (error) {
-        lastError = error;
-      }
-      if (attempt === 0) await sleep(1000);
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
+        body: query,
+      });
+      if (response.ok) return response;
+      if (response.status < 500) return response; // client-side error — retrying won't help
+      lastError = new Error(`OpenStreetMap search failed: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      lastError = error;
     }
   }
 

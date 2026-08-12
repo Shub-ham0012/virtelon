@@ -139,61 +139,40 @@ describe("OpenStreetMapProvider", () => {
     expect(results).toEqual([]);
   });
 
-  it("retries the same Overpass mirror once on a 5xx before failing over", async () => {
-    vi.useFakeTimers();
-    try {
-      fetchMock
-        .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
-        .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1, attempt 1 — 500
-        .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 1, attempt 2 — succeeds
+  it("fails over to the next Overpass mirror on a 5xx, without retrying the same one", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
+      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1 — 500
+      .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 2 — succeeds
 
-      const promise = provider.search({ category: "doctors", location: "Pune", limit: 20 });
-      await vi.runAllTimersAsync();
-      const results = await promise;
+    const results = await provider.search({ category: "doctors", location: "Pune", limit: 20 });
 
-      expect(results).toEqual([]);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      expect(fetchMock.mock.calls[1]![0]).toBe(fetchMock.mock.calls[2]![0]); // same mirror both times
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(results).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]![0]).not.toBe(fetchMock.mock.calls[2]![0]); // different mirror, no retry
   });
 
-  it("fails over to the next Overpass mirror once the first is exhausted", async () => {
-    vi.useFakeTimers();
-    try {
-      fetchMock
-        .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
-        .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1, attempt 1 — 500
-        .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1, attempt 2 — 500
-        .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 2, attempt 1 — succeeds
+  it("falls over through all three mirrors before succeeding", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
+      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1 — 500
+      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 2 — 500
+      .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 3 — succeeds
 
-      const promise = provider.search({ category: "doctors", location: "Pune", limit: 20 });
-      await vi.runAllTimersAsync();
-      const results = await promise;
+    const results = await provider.search({ category: "doctors", location: "Pune", limit: 20 });
 
-      expect(results).toEqual([]);
-      expect(fetchMock).toHaveBeenCalledTimes(4);
-      expect(fetchMock.mock.calls[1]![0]).not.toBe(fetchMock.mock.calls[3]![0]); // different mirror
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(results).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("throws once every mirror is exhausted", async () => {
-    vi.useFakeTimers();
-    try {
-      fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)); // nominatim
-      fetchMock.mockResolvedValue(jsonResponse({}, false)); // every Overpass attempt fails
+    fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)); // nominatim
+    fetchMock.mockResolvedValue(jsonResponse({}, false)); // every Overpass mirror fails
 
-      const promise = provider.search({ category: "doctors", location: "Pune", limit: 20 });
-      const assertion = expect(promise).rejects.toThrow("OpenStreetMap search failed");
-      await vi.runAllTimersAsync();
-      await assertion;
+    await expect(provider.search({ category: "doctors", location: "Pune", limit: 20 })).rejects.toThrow(
+      "OpenStreetMap search failed"
+    );
 
-      expect(fetchMock).toHaveBeenCalledTimes(1 + 3 * 2); // nominatim + 3 mirrors x 2 attempts
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(fetchMock).toHaveBeenCalledTimes(1 + 3); // nominatim + 3 mirrors, one attempt each
   });
 });
