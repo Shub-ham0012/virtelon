@@ -75,10 +75,20 @@ describe("OpenStreetMapProvider", () => {
   it("falls back to a name-based search for an unrecognized category", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)).mockResolvedValueOnce(jsonResponse({ elements: [] }));
 
-    await provider.search({ category: "coaching institute", location: "Patna", limit: 20 });
+    await provider.search({ category: "pet grooming", location: "Patna", limit: 20 });
 
     const overpassBody = fetchMock.mock.calls[1]![1].body as string;
-    expect(overpassBody).toContain(`"name"~"coaching institute"`);
+    expect(overpassBody).toContain(`"name"~"pet grooming"`);
+  });
+
+  it("maps coaching/tuition categories to the real OSM tag instead of the slow name search", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)).mockResolvedValueOnce(jsonResponse({ elements: [] }));
+
+    await provider.search({ category: "Coaching Institute", location: "Patna", limit: 20 });
+
+    const overpassBody = fetchMock.mock.calls[1]![1].body as string;
+    expect(overpassBody).toContain(`"office"="educational_institution"`);
+    expect(overpassBody).not.toContain("name"); // never falls into the regex path
   });
 
   it("escapes double-quotes in the category so it can't break out of the Overpass QL string", async () => {

@@ -15,11 +15,14 @@ const USER_AGENT = "VirtelonPlatform-LeadDiscovery/1.0 (+https://virtelon.com)";
 const FETCH_TIMEOUT_MS = 8_000;
 const SEARCH_RADIUS_METERS = 8_000;
 
-// Best-effort category -> OSM tag mapping. OSM's tagging vocabulary doesn't
-// cleanly cover every business category (there is no dedicated tag for
-// "coaching institute", a very common Indian small-business category) — see
-// docs/ARCHITECTURE.md §0.3. Categories not listed here fall back to a
-// name-based text search instead of failing outright.
+// Best-effort category -> OSM tag mapping. A tag-based query uses an index
+// and reliably returns in well under a second; a category with no mapping
+// here falls back to a name-based regex search, which is a genuinely heavy
+// operation for the free Overpass instance — verified live (Aug 2026): a
+// name-regex search timed out repeatedly even at a 3km radius and a 20s
+// wait, while every tag-based query below returned in under a second. Keep
+// this list growing rather than relying on the regex fallback for common
+// categories — see docs/ARCHITECTURE.md §0.3.
 const CATEGORY_TAGS: Record<string, string[]> = {
   doctor: ["amenity=doctors", "healthcare=doctor"],
   doctors: ["amenity=doctors", "healthcare=doctor"],
@@ -43,6 +46,17 @@ const CATEGORY_TAGS: Record<string, string[]> = {
   grocery: ["shop=supermarket", "shop=convenience"],
   bank: ["amenity=bank"],
   lawyer: ["office=lawyer"],
+  // Confirmed live against real Patna data — office=educational_institution
+  // is what Indian coaching/tuition businesses are actually tagged with in
+  // OSM (e.g. "GOAL Institute for Medical/IIT"), not a school amenity tag.
+  "coaching institute": ["office=educational_institution"],
+  "coaching center": ["office=educational_institution"],
+  "coaching centre": ["office=educational_institution"],
+  coaching: ["office=educational_institution"],
+  tuition: ["office=educational_institution"],
+  tutoring: ["office=educational_institution"],
+  "tuition center": ["office=educational_institution"],
+  "tuition centre": ["office=educational_institution"],
 };
 
 interface NominatimResult {
