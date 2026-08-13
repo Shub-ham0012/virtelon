@@ -8,14 +8,28 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { Pill } from "@/components/ui/pill";
 import { DiscoverForm } from "./discover-form";
 
-export default async function LeadsPage() {
+const PAGE_SIZE = 50;
+
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
+
   const user = await requireSession();
   const db = tenantDb(user);
 
-  const leads = await db.lead.findMany({
-    orderBy: [{ leadScore: { sort: "desc", nulls: "last" } }, { discoveredAt: "desc" }],
-    take: 100,
-  });
+  const [leads, totalCount] = await Promise.all([
+    db.lead.findMany({
+      // Most-recently-discovered first — after running a search, the leads
+      // it just found must be reachable regardless of score, otherwise a
+      // fresh low-scoring batch (no website/social data yet) is silently
+      // buried under older higher-scored leads with no way to page to it.
+      orderBy: [{ discoveredAt: "desc" }, { leadScore: { sort: "desc", nulls: "last" } }],
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    db.lead.count(),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const canManage = hasPermission(user.role, "lead:manage");
   const provider = getLeadDiscoveryProvider();
@@ -26,7 +40,7 @@ export default async function LeadsPage() {
         <div>
           <h1 className="font-serif-display text-2xl font-medium">Leads</h1>
           <p className="mt-1 text-[12.5px] text-(--sub)">
-            {leads.length} lead{leads.length === 1 ? "" : "s"} · discovery via {provider.name}
+            {totalCount} lead{totalCount === 1 ? "" : "s"} · discovery via {provider.name}
           </p>
         </div>
         {canManage ? (
@@ -92,6 +106,26 @@ export default async function LeadsPage() {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between text-[12.5px] text-(--sub)">
+          <span>
+            Page {page} of {totalPages}
+          </span>
+          <div className="flex gap-3">
+            {page > 1 ? (
+              <Link href={`/leads?page=${page - 1}`} className="font-semibold text-(--accent)">
+                ← Previous
+              </Link>
+            ) : null}
+            {page < totalPages ? (
+              <Link href={`/leads?page=${page + 1}`} className="font-semibold text-(--accent)">
+                Next →
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

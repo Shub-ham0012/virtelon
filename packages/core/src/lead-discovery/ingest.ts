@@ -52,6 +52,12 @@ export async function ingestDiscoveredLeads(
           reviewCount: normalized.reviewCount,
           businessStatus: normalized.businessStatus,
           website: normalized.website ?? existingByExternalId.website,
+          // Backfill city/state if the stored value is missing — a common
+          // gap for OSM records with no addr:city tag (see normalize.ts's
+          // location-based fallback), so re-discovering an already-known
+          // business is also a chance to fix an unhelpfully blank city.
+          city: existingByExternalId.city ?? normalized.city,
+          state: existingByExternalId.state ?? normalized.state,
           lastEnrichedAt: new Date(),
         },
       });

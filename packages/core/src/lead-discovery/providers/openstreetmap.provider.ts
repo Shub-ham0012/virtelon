@@ -176,7 +176,7 @@ export class OpenStreetMapProvider implements LeadDiscoveryProvider {
         return Boolean(el.tags?.website || el.tags?.["contact:website"]);
       })
       .slice(0, criteria.limit)
-      .map((el) => this.toDiscoveredLead(el, criteria.category));
+      .map((el) => this.toDiscoveredLead(el, criteria.category, criteria.location));
   }
 
   private async geocodeArea(location: string): Promise<GeocodedArea | null> {
@@ -225,7 +225,7 @@ export class OpenStreetMapProvider implements LeadDiscoveryProvider {
 out center 50;`;
   }
 
-  private toDiscoveredLead(el: OverpassElement, category: string): DiscoveredLead {
+  private toDiscoveredLead(el: OverpassElement, category: string, searchedLocation: string): DiscoveredLead {
     const tags = el.tags!;
     const lat = el.lat ?? el.center?.lat;
     const lon = el.lon ?? el.center?.lon;
@@ -239,7 +239,10 @@ out center 50;`;
       phone: tags.phone ?? tags["contact:phone"],
       website: tags.website ?? tags["contact:website"],
       address: address || undefined,
-      city: tags["addr:city"],
+      // Many OSM business nodes have no addr:city tag at all — falling back
+      // to what the user actually searched for keeps the city column
+      // meaningful instead of blank for a large share of real results.
+      city: tags["addr:city"] || searchedLocation.split(",")[0]?.trim(),
       state: tags["addr:state"],
       country: tags["addr:country"],
       latitude: lat,

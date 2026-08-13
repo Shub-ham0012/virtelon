@@ -65,7 +65,8 @@ export async function discoverLeads(_prev: DiscoverState, formData: FormData): P
       minRating,
       requireWebsite: requireWebsite === "any" ? undefined : requireWebsite === "yes",
     });
-  } catch {
+  } catch (error) {
+    console.error(`discoverLeads: ${provider.name} search failed for "${category}" in "${location}":`, error);
     return {
       error: `${provider.name === "openstreetmap" ? "OpenStreetMap" : provider.name}'s free search service is temporarily unavailable — this happens occasionally with the free tier under load. Please try again in a minute.`,
     };
