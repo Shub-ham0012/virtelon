@@ -1,17 +1,16 @@
 import type { DiscoveredLead, LeadDiscoveryProvider, LeadSearchCriteria } from "../LeadDiscoveryProvider";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-// The public overpass-api.de instance frequently returns 504s when under
-// load (a known, documented characteristic of the free instance — not a bug
-// in this integration). Two other public instances mirror the same data, so
-// on a 5xx/network failure we retry the same instance once, then fail over
-// to the next mirror, rather than surfacing a transient outage as a hard
-// error to the user.
-const OVERPASS_URLS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.openstreetmap.ru/api/interpreter",
-];
+// The public overpass-api.de instance occasionally returns 504s or is briefly
+// unreachable under load (a known, documented characteristic of the free
+// instance — not a bug in this integration; verified live against the real
+// OSM wiki's current instance list as of Aug 2026, since two previously
+// listed mirrors here had gone stale/unreachable). Kept to one well-known,
+// generously-quota'd (10k queries/day) official instance rather than
+// unverified third-party mirrors — see the retry pass in fetchFromOverpass
+// for how a transient full outage gets a second chance instead of failing
+// the whole search immediately.
+const OVERPASS_URLS = ["https://overpass-api.de/api/interpreter"];
 const USER_AGENT = "VirtelonPlatform-LeadDiscovery/1.0 (+https://virtelon.com)";
 const FETCH_TIMEOUT_MS = 8_000;
 const SEARCH_RADIUS_METERS = 8_000;
@@ -85,29 +84,31 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Tries each Overpass mirror once, in turn, on a 5xx response or network/
- * timeout error, before moving to the next mirror — no same-mirror retry.
- * A slow/overloaded mirror is more likely to still be slow a second later
- * than to have recovered, so falling over to a *different* mirror gets a
- * working response faster than retrying the same one (worst case ~3x
- * FETCH_TIMEOUT_MS instead of ~6x). Only throws once every mirror has
- * failed.
+ * timeout error. If every mirror fails, waits briefly and does one more full
+ * pass before giving up — a full-service outage (all mirrors down/overloaded
+ * at once) has been observed to self-resolve within seconds, so one delayed
+ * retry pass catches that case without the excessive worst-case wait of
+ * retrying every mirror immediately in a tight loop.
  */
 async function fetchFromOverpass(query: string): Promise<Response> {
   let lastError: unknown;
 
-  for (const url of OVERPASS_URLS) {
-    try {
-      const response = await fetchWithTimeout(url, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
-        body: query,
-      });
-      if (response.ok) return response;
-      if (response.status < 500) return response; // client-side error — retrying won't help
-      lastError = new Error(`OpenStreetMap search failed: ${response.status} ${response.statusText}`);
-    } catch (error) {
-      lastError = error;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const url of OVERPASS_URLS) {
+      try {
+        const response = await fetchWithTimeout(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
+          body: query,
+        });
+        if (response.ok) return response;
+        if (response.status < 500) return response; // client-side error — retrying won't help
+        lastError = new Error(`OpenStreetMap search failed: ${response.status} ${response.statusText}`);
+      } catch (error) {
+        lastError = error;
+      }
     }
+    if (pass === 0) await sleep(4000);
   }
 
   throw lastError instanceof Error ? lastError : new Error("OpenStreetMap search failed after retries");

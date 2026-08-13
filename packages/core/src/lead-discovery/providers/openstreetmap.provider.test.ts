@@ -139,40 +139,39 @@ describe("OpenStreetMapProvider", () => {
     expect(results).toEqual([]);
   });
 
-  it("fails over to the next Overpass mirror on a 5xx, without retrying the same one", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
-      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1 — 500
-      .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 2 — succeeds
+  it("retries once after a short delay when Overpass fails, and succeeds on the second pass", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
+        .mockResolvedValueOnce(jsonResponse({}, false)) // pass 1 — 500
+        .mockResolvedValueOnce(jsonResponse({ elements: [] })); // pass 2 — succeeds
 
-    const results = await provider.search({ category: "doctors", location: "Pune", limit: 20 });
+      const promise = provider.search({ category: "doctors", location: "Pune", limit: 20 });
+      await vi.runAllTimersAsync();
+      const results = await promise;
 
-    expect(results).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[1]![0]).not.toBe(fetchMock.mock.calls[2]![0]); // different mirror, no retry
+      expect(results).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("falls over through all three mirrors before succeeding", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)) // nominatim
-      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 1 — 500
-      .mockResolvedValueOnce(jsonResponse({}, false)) // mirror 2 — 500
-      .mockResolvedValueOnce(jsonResponse({ elements: [] })); // mirror 3 — succeeds
+  it("throws once both passes fail", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)); // nominatim
+      fetchMock.mockResolvedValue(jsonResponse({}, false)); // every Overpass attempt fails
 
-    const results = await provider.search({ category: "doctors", location: "Pune", limit: 20 });
+      const promise = provider.search({ category: "doctors", location: "Pune", limit: 20 });
+      const assertion = expect(promise).rejects.toThrow("OpenStreetMap search failed");
+      await vi.runAllTimersAsync();
+      await assertion;
 
-    expect(results).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-  });
-
-  it("throws once every mirror is exhausted", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)); // nominatim
-    fetchMock.mockResolvedValue(jsonResponse({}, false)); // every Overpass mirror fails
-
-    await expect(provider.search({ category: "doctors", location: "Pune", limit: 20 })).rejects.toThrow(
-      "OpenStreetMap search failed"
-    );
-
-    expect(fetchMock).toHaveBeenCalledTimes(1 + 3); // nominatim + 3 mirrors, one attempt each
+      expect(fetchMock).toHaveBeenCalledTimes(1 + 2); // nominatim + 2 passes over the one mirror
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
