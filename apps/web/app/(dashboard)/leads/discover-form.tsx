@@ -5,6 +5,8 @@ import { discoverLeads, type DiscoverState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CategoryField } from "@/components/category-field";
+import { SUPPORTED_CATEGORIES } from "@virtelon/core/lead-discovery";
 
 const initialState: DiscoverState = {};
 
@@ -26,8 +28,7 @@ export function DiscoverForm({ providerName }: { providerName: string }) {
 
       <form action={formAction} className="grid grid-cols-2 gap-4 md:grid-cols-5 md:items-end">
         <div className="col-span-2">
-          <Label htmlFor="category">Category</Label>
-          <Input id="category" name="category" placeholder="Coaching Institute" required />
+          <CategoryField categories={SUPPORTED_CATEGORIES} restrictToKnown={isOpenStreetMap} />
         </div>
         <div className="col-span-2">
           <Label htmlFor="location">Location</Label>

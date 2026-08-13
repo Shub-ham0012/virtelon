@@ -5,10 +5,18 @@ import { createCampaignAction, type CampaignFormState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CategoryField } from "@/components/category-field";
+import { SUPPORTED_CATEGORIES } from "@virtelon/core/lead-discovery";
 
 const initialState: CampaignFormState = {};
 
-export function CampaignForm({ services }: { services: { id: string; name: string }[] }) {
+export function CampaignForm({
+  services,
+  providerName,
+}: {
+  services: { id: string; name: string }[];
+  providerName: string;
+}) {
   const [state, formAction, pending] = useActionState(createCampaignAction, initialState);
 
   return (
@@ -18,10 +26,7 @@ export function CampaignForm({ services }: { services: { id: string; name: strin
         <Input id="name" name="name" placeholder="Patna Coaching Website Campaign" required />
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="category">Category</Label>
-          <Input id="category" name="category" placeholder="Coaching Institute" required />
-        </div>
+        <CategoryField categories={SUPPORTED_CATEGORIES} restrictToKnown={providerName === "openstreetmap"} />
         <div>
           <Label htmlFor="location">Location</Label>
           <Input id="location" name="location" placeholder="Patna, Bihar" required />

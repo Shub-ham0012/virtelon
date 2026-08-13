@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenStreetMapProvider } from "./openstreetmap.provider";
+import { SUPPORTED_CATEGORIES } from "../categories";
 
 function jsonResponse(body: unknown, ok = true): Response {
   return {
@@ -184,4 +185,16 @@ describe("OpenStreetMapProvider", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(SUPPORTED_CATEGORIES)(
+    "dropdown category '$value' takes the fast tag path, never the slow name search",
+    async ({ value }) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(NOMINATIM_RESULT)).mockResolvedValueOnce(jsonResponse({ elements: [] }));
+
+      await provider.search({ category: value, location: "Pune", limit: 20 });
+
+      const overpassBody = fetchMock.mock.calls[1]![1].body as string;
+      expect(overpassBody).not.toContain('"name"~');
+    }
+  );
 });

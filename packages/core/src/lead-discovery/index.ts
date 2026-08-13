@@ -9,3 +9,4 @@ export { MockLeadDiscoveryProvider } from "./providers/mock.provider";
 export { GooglePlacesProvider } from "./providers/google-places.provider";
 export { OpenStreetMapProvider } from "./providers/openstreetmap.provider";
 export { CsvImportAdapter } from "./adapters/csv.adapter";
+export { SUPPORTED_CATEGORIES, type SupportedCategory } from "./categories";
