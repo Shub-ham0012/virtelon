@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { SupportedCategory } from "@virtelon/core/lead-discovery";
+import type { SupportedCategory } from "@virtelon/core/lead-discovery/categories";
 
 const OTHER_VALUE = "__other__";
 

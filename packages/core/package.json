@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./rbac": "./src/rbac/index.ts",
     "./lead-discovery": "./src/lead-discovery/index.ts",
+    "./lead-discovery/categories": "./src/lead-discovery/categories.ts",
     "./website-audit": "./src/website-audit/index.ts",
     "./presence-research": "./src/presence-research/index.ts",
     "./lead-scoring": "./src/lead-scoring/index.ts",

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CategoryField } from "@/components/category-field";
-import { SUPPORTED_CATEGORIES } from "@virtelon/core/lead-discovery";
+import { SUPPORTED_CATEGORIES } from "@virtelon/core/lead-discovery/categories";
 
 const initialState: DiscoverState = {};
 
