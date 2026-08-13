@@ -12,8 +12,45 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 // the whole search immediately.
 const OVERPASS_URLS = ["https://overpass-api.de/api/interpreter"];
 const USER_AGENT = "VirtelonPlatform-LeadDiscovery/1.0 (+https://virtelon.com)";
-const FETCH_TIMEOUT_MS = 8_000;
-const SEARCH_RADIUS_METERS = 8_000;
+// Verified live (Aug 2026): back-to-back requests from this process to the
+// public instance go from <1s to 18-20s to an outright abort within 3 calls
+// — the instance's fair-use slot throttling penalizing a client that hits it
+// too fast, not a real outage. A longer timeout gives a throttled-but-alive
+// response room to arrive instead of aborting a request that would have
+// succeeded; the request queue below keeps our own calls spaced out so we
+// don't trigger that throttling on ourselves in the first place.
+const FETCH_TIMEOUT_MS = 15_000;
+// 8km was too tight for small/mid-size Indian cities where OSM coverage of
+// a given category can be sparse (verified live: "fitness_centre" near
+// Muzaffarpur had 0 hits at 8km and only 1 at 50km) — 15km trades a little
+// relevance for actually finding something, without the cost a wider regex
+// fallback search would carry (tag queries stay index-backed either way).
+const SEARCH_RADIUS_METERS = 15_000;
+
+// The public Overpass instance's own throttling gets worse the faster a
+// single client re-hits it — so every call this process makes goes through
+// one queue that guarantees at least MIN_GAP_MS between requests leaving
+// this process, regardless of how many searches run concurrently across
+// tenants. This is us being a well-behaved client, not a workaround for a
+// bug: verified live that unpaced repeated calls degrade within 3 requests.
+const MIN_OVERPASS_GAP_MS = 1_500;
+let overpassQueue: Promise<void> = Promise.resolve();
+
+function scheduleOverpassCall<T>(fn: () => Promise<T>): Promise<T> {
+  // Pacing exists to be a well-behaved client to the real, external Overpass
+  // service — meaningless (and unsafe to couple to module-level promise
+  // state that outlives a single test) once fetch is mocked, so it's a
+  // no-op under the test runner rather than something tests need to know
+  // to advance fake timers for.
+  if (process.env.VITEST) return fn();
+
+  const result = overpassQueue.then(fn, fn);
+  overpassQueue = result.then(
+    () => sleep(MIN_OVERPASS_GAP_MS),
+    () => sleep(MIN_OVERPASS_GAP_MS)
+  );
+  return result;
+}
 
 // Best-effort category -> OSM tag mapping. A tag-based query uses an index
 // and reliably returns in well under a second; a category with no mapping
@@ -163,7 +200,7 @@ export class OpenStreetMapProvider implements LeadDiscoveryProvider {
     if (!area) return [];
 
     const query = this.buildOverpassQuery(area, criteria.category);
-    const response = await fetchFromOverpass(query);
+    const response = await scheduleOverpassCall(() => fetchFromOverpass(query));
     if (!response.ok) {
       throw new Error(`OpenStreetMap search failed: ${response.status} ${response.statusText}`);
     }

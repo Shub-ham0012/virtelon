@@ -67,8 +67,20 @@ export function DiscoverForm({ providerName }: { providerName: string }) {
         </div>
       </form>
 
+      {pending && isOpenStreetMap ? (
+        <p className="mt-3 text-xs text-(--sub)">
+          The free OpenStreetMap search can take 10-20 seconds, occasionally longer under load — this isn't stuck.
+        </p>
+      ) : null}
+
       {state.error ? <p className="mt-3 text-sm text-(--danger)">{state.error}</p> : null}
-      {state.success ? (
+      {state.success && (state.createdCount ?? 0) + (state.updatedCount ?? 0) + (state.duplicateCount ?? 0) === 0 ? (
+        <p className="mt-3 text-sm text-(--sub)">
+          No matches on {state.providerName} for that category in that area. Free OpenStreetMap data has real
+          coverage gaps, especially in smaller cities — try a nearby larger city, a broader category, or a wider
+          area.
+        </p>
+      ) : state.success ? (
         <p className="mt-3 text-sm text-(--sub)">
           Found via <strong>{state.providerName}</strong>: {state.createdCount} new,{" "}
           {state.updatedCount} updated, {state.duplicateCount} already known.
